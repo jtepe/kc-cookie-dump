@@ -1,0 +1,11 @@
+[package]
+name = "kc-cookie-dump"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.60", features = ["derive"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "cookies", "form", "rustls"] }
+scraper = "0.25.0"
+rpassword = "7.4.0"
+url = "2.5.8"

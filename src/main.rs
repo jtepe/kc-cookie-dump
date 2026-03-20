@@ -24,6 +24,10 @@ struct Args {
     #[arg(long, default_value = ".")]
     out_dir: PathBuf,
 
+    /// Write a combined Netscape/curl cookie-jar file at this path.
+    #[arg(long)]
+    cookie_jar: Option<PathBuf>,
+
     /// Maximum number of redirects to follow (for safety)
     #[arg(long, default_value_t = 30)]
     max_redirects: usize,
@@ -60,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 1) Call service URL and follow redirects until we reach the Keycloak login page.
     let (login_page_url, login_page_html) = follow_until_login_page(
         &client,
-        start_url,
+        start_url.clone(),
         args.max_redirects,
         &mut set_cookie_headers,
     )?;
@@ -131,11 +135,85 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("wrote {name} -> {}", path.display());
     }
 
+    if let Some(jar_path) = &args.cookie_jar {
+        let default_domain = start_url.host_str().unwrap_or("localhost");
+        let mut lines = Vec::new();
+        lines.push("# Netscape HTTP Cookie File".to_string());
+        for name in &args.cookies {
+            let raw = &last_per_cookie[name];
+            lines.push(cookie_jar_line(raw, default_domain));
+        }
+        let content = lines.join("\n") + "\n";
+        std::fs::write(jar_path, &content)?;
+        eprintln!("wrote cookie jar -> {}", jar_path.display());
+    }
+
     Ok(())
 }
 
 fn cookie_output_path(out_dir: &Path, name: &str) -> PathBuf {
     out_dir.join(format!("{name}.set-cookie"))
+}
+
+/// Convert a raw `Set-Cookie` header value into a Netscape cookie-jar line.
+///
+/// Format: domain \t include_subdomains \t path \t secure \t expiry \t name \t value
+fn cookie_jar_line(raw: &str, default_domain: &str) -> String {
+    // Split "name=value; attr1; attr2=val" into name-value and attributes.
+    let (name_value, attrs_str) = raw.split_once(';').unwrap_or((raw, ""));
+
+    let (name, value) = name_value.split_once('=').unwrap_or((name_value, ""));
+    let name = name.trim();
+    let value = value.trim();
+
+    let mut domain: Option<String> = None;
+    let mut path = "/".to_string();
+    let mut secure = false;
+    let mut expiry: u64 = 0; // 0 = session cookie
+
+    for attr in attrs_str.split(';') {
+        let attr = attr.trim();
+        if attr.is_empty() {
+            continue;
+        }
+        let lower = attr.to_ascii_lowercase();
+        if lower == "secure" {
+            secure = true;
+        } else if lower == "httponly" {
+            // not relevant for cookie jar format
+        } else if let Some((key, val)) = attr.split_once('=') {
+            let key = key.trim().to_ascii_lowercase();
+            let val = val.trim();
+            match key.as_str() {
+                "domain" => {
+                    domain = Some(val.to_string());
+                }
+                "path" => {
+                    path = val.to_string();
+                }
+                "max-age" => {
+                    if let Ok(secs) = val.parse::<u64>() {
+                        expiry = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                            + secs;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let domain = domain.unwrap_or_else(|| default_domain.to_string());
+    // If domain starts with '.', subdomains are included.
+    let include_subdomains = domain.starts_with('.');
+
+    format!(
+        "{domain}\t{sub}\t{path}\t{sec}\t{expiry}\t{name}\t{value}",
+        sub = if include_subdomains { "TRUE" } else { "FALSE" },
+        sec = if secure { "TRUE" } else { "FALSE" },
+    )
 }
 
 fn prompt(msg: &str) -> Result<String, Box<dyn Error>> {

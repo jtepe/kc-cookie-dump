@@ -21,21 +21,25 @@ kc-cookie-dump \
 
 ### Output
 
-By default the tool writes a single cookie jar:
+By default the tool writes a single cookie jar to the current working directory:
 
 - `./cookies.jar`
 
 The file content uses the Netscape cookie jar format understood by tools such as `curl`.
 
-Use `--cookie-jar` to choose a different jar path:
+Use `--out-dir` to choose the output directory for all generated files, including the cookie jar:
 
 ```bash
 kc-cookie-dump \
   --url https://service.example.com/ \
   --cookie SESSION \
   --cookie XSRF-TOKEN \
-  --cookie-jar ./artifacts/service.cookies
+  --out-dir ./artifacts
 ```
+
+This writes the cookie jar to:
+
+- `./artifacts/cookies.jar`
 
 Use `--dump-cookies` to additionally write one raw `Set-Cookie` file per requested cookie:
 
@@ -59,9 +63,8 @@ Each per-cookie file contains the raw `Set-Cookie` header value.
 
 - `--url <URL>`: Service URL to start the login flow.
 - `--cookie <NAME>`: Cookie name to dump (repeatable, required).
-- `--cookie-jar <PATH>`: Output path for the combined cookie jar (default: `./cookies.jar`).
 - `--dump-cookies`: Also write one raw `Set-Cookie` file per requested cookie.
-- `--out-dir <DIR>`: Output directory for per-cookie files written by `--dump-cookies` (default: current directory).
+- `--out-dir <DIR>`: Output directory for the cookie jar and any per-cookie files written by `--dump-cookies` (default: current directory).
 - `--max-redirects <N>`: Safety limit for redirect following (default: 30).
 
 ## TLS note

@@ -24,10 +24,6 @@ struct Args {
     #[arg(long, default_value = ".")]
     out_dir: PathBuf,
 
-    /// Write the combined Netscape/curl cookie-jar file at this path.
-    #[arg(long, default_value = "cookies.jar")]
-    cookie_jar: PathBuf,
-
     /// Also write one raw Set-Cookie file per requested cookie name.
     #[arg(long, default_value_t = false)]
     dump_cookies: bool,
@@ -51,6 +47,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     if args.cookies.is_empty() {
         return Err("at least one --cookie must be provided".into());
     }
+
+    std::fs::create_dir_all(&args.out_dir)?;
 
     let client = Client::builder()
         .cookie_store(true)
@@ -131,7 +129,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if args.dump_cookies {
-        std::fs::create_dir_all(&args.out_dir)?;
         for name in &args.cookies {
             let value = &last_per_cookie[name];
             let path = cookie_output_path(&args.out_dir, name);
@@ -140,7 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    create_parent_dir_if_needed(&args.cookie_jar)?;
+    let cookie_jar_path = cookie_jar_path(&args.out_dir);
     let default_domain = start_url.host_str().unwrap_or("localhost");
     let mut lines = Vec::new();
     lines.push("# Netscape HTTP Cookie File".to_string());
@@ -149,8 +146,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         lines.push(cookie_jar_line(raw, default_domain));
     }
     let content = lines.join("\n") + "\n";
-    std::fs::write(&args.cookie_jar, &content)?;
-    eprintln!("wrote cookie jar -> {}", args.cookie_jar.display());
+    std::fs::write(&cookie_jar_path, &content)?;
+    eprintln!("wrote cookie jar -> {}", cookie_jar_path.display());
 
     Ok(())
 }
@@ -159,13 +156,8 @@ fn cookie_output_path(out_dir: &Path, name: &str) -> PathBuf {
     out_dir.join(format!("{name}.set-cookie"))
 }
 
-fn create_parent_dir_if_needed(path: &Path) -> Result<(), Box<dyn Error>> {
-    if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        std::fs::create_dir_all(parent)?;
-    }
-    Ok(())
+fn cookie_jar_path(out_dir: &Path) -> PathBuf {
+    out_dir.join("cookies.jar")
 }
 
 /// Convert a raw `Set-Cookie` header value into a Netscape cookie-jar line.

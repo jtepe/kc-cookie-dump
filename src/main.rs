@@ -20,13 +20,17 @@ struct Args {
     #[arg(long = "cookie", required = true)]
     cookies: Vec<String>,
 
-    /// Output directory. One file per cookie will be written there.
+    /// Output directory for per-cookie files written by --dump-cookies.
     #[arg(long, default_value = ".")]
     out_dir: PathBuf,
 
-    /// Write a combined Netscape/curl cookie-jar file at this path.
-    #[arg(long)]
-    cookie_jar: Option<PathBuf>,
+    /// Write the combined Netscape/curl cookie-jar file at this path.
+    #[arg(long, default_value = "cookies.jar")]
+    cookie_jar: PathBuf,
+
+    /// Also write one raw Set-Cookie file per requested cookie name.
+    #[arg(long, default_value_t = false)]
+    dump_cookies: bool,
 
     /// Maximum number of redirects to follow (for safety)
     #[arg(long, default_value_t = 30)]
@@ -47,8 +51,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     if args.cookies.is_empty() {
         return Err("at least one --cookie must be provided".into());
     }
-
-    std::fs::create_dir_all(&args.out_dir)?;
 
     let client = Client::builder()
         .cookie_store(true)
@@ -128,31 +130,42 @@ fn main() -> Result<(), Box<dyn Error>> {
         .into());
     }
 
-    for name in &args.cookies {
-        let value = &last_per_cookie[name];
-        let path = cookie_output_path(&args.out_dir, name);
-        std::fs::write(&path, value)?;
-        eprintln!("wrote {name} -> {}", path.display());
+    if args.dump_cookies {
+        std::fs::create_dir_all(&args.out_dir)?;
+        for name in &args.cookies {
+            let value = &last_per_cookie[name];
+            let path = cookie_output_path(&args.out_dir, name);
+            std::fs::write(&path, value)?;
+            eprintln!("wrote {name} -> {}", path.display());
+        }
     }
 
-    if let Some(jar_path) = &args.cookie_jar {
-        let default_domain = start_url.host_str().unwrap_or("localhost");
-        let mut lines = Vec::new();
-        lines.push("# Netscape HTTP Cookie File".to_string());
-        for name in &args.cookies {
-            let raw = &last_per_cookie[name];
-            lines.push(cookie_jar_line(raw, default_domain));
-        }
-        let content = lines.join("\n") + "\n";
-        std::fs::write(jar_path, &content)?;
-        eprintln!("wrote cookie jar -> {}", jar_path.display());
+    create_parent_dir_if_needed(&args.cookie_jar)?;
+    let default_domain = start_url.host_str().unwrap_or("localhost");
+    let mut lines = Vec::new();
+    lines.push("# Netscape HTTP Cookie File".to_string());
+    for name in &args.cookies {
+        let raw = &last_per_cookie[name];
+        lines.push(cookie_jar_line(raw, default_domain));
     }
+    let content = lines.join("\n") + "\n";
+    std::fs::write(&args.cookie_jar, &content)?;
+    eprintln!("wrote cookie jar -> {}", args.cookie_jar.display());
 
     Ok(())
 }
 
 fn cookie_output_path(out_dir: &Path, name: &str) -> PathBuf {
     out_dir.join(format!("{name}.set-cookie"))
+}
+
+fn create_parent_dir_if_needed(path: &Path) -> Result<(), Box<dyn Error>> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    Ok(())
 }
 
 /// Convert a raw `Set-Cookie` header value into a Netscape cookie-jar line.

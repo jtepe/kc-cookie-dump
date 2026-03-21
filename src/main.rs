@@ -137,7 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let cookie_jar_path = cookie_jar_path(&args.out_dir);
+    let cookie_jar_path = args.out_dir.join("cookies.jar");
     let default_domain = start_url.host_str().unwrap_or("localhost");
     let mut lines = Vec::new();
     lines.push("# Netscape HTTP Cookie File".to_string());
@@ -154,10 +154,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn cookie_output_path(out_dir: &Path, name: &str) -> PathBuf {
     out_dir.join(format!("{name}.set-cookie"))
-}
-
-fn cookie_jar_path(out_dir: &Path) -> PathBuf {
-    out_dir.join("cookies.jar")
 }
 
 /// Convert a raw `Set-Cookie` header value into a Netscape cookie-jar line.
